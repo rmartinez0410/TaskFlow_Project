@@ -6,6 +6,8 @@ import { NATS_SERVICES } from 'src/config/services';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { catchError } from 'rxjs';
 import { User } from './decorators/user.decorator';
+import { Token } from './decorators/token.decorator';
+import { User as Iuser} from './entities/auth.entity';
 
 
 @Controller('auth')
@@ -34,8 +36,8 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Get()
-  verify(@User() user: any){
-    return user ;
+  verify(@User() user: Iuser, @Token() token: string ){
+    return {user, token} ;
   }
 
   
