@@ -3,14 +3,14 @@ import { IsEmail, IsString, MaxLength, MinLength } from "class-validator";
 export class Registeruserdto{
     
     @IsString()
-    name: string;
+    name: String;
     
     @IsEmail()
     @IsString()
-    email: string;
+    email: String;
     
     @IsString()
     @MinLength(6)
     @MaxLength(50)
-    password: string;
+    password: String;
 }

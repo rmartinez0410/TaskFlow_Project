@@ -15,8 +15,8 @@ export class AuthController {
   constructor(@Inject(NATS_SERVICES) private readonly client : ClientProxy) {}
 
   @Post('register')
-  register (@Body() registerUserDto: Registeruserdto) {
-    return this.client.send('auth.register', registerUserDto)
+  async register (@Body() registerUserDto: Registeruserdto) {
+    return await this.client.send('auth.register', registerUserDto)
      .pipe(
       catchError((err) => {
         throw new RpcException(err.message);

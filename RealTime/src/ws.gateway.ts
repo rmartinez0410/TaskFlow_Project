@@ -1,4 +1,4 @@
-// realtime/ws.gateway.ts
+
 import {
   WebSocketGateway,
   WebSocketServer,
