@@ -1,8 +1,8 @@
 package main
 
 import (
-	"auth/internal/data"
-	"auth/internal/validator"
+	"auth/AuthService/internal/data"
+	"auth/AuthService/internal/validator"
 	"encoding/json"
 	"errors"
 	"net/http"

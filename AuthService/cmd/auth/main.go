@@ -1,7 +1,7 @@
 package main
 
 import (
-	"auth/internal/data"
+	"auth/AuthService/internal/data"
 	"context"
 	"database/sql"
 	"log/slog"

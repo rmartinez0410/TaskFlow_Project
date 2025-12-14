@@ -1,7 +1,7 @@
 package main
 
 import (
-	"auth/internal/data"
+	"auth/AuthService/internal/data"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
