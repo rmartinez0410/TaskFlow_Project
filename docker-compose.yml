@@ -1,0 +1,25 @@
+services:
+  nats-server:
+    image: nats:latest
+    ports:
+      - "4222:4222"
+
+  auth-service:
+    build: ./AuthService
+    ports:
+      - "8080:8080"
+
+  tasks-service:
+    build: ./TaskService
+    ports:
+      - "8000:8000"
+
+  api-gateway:
+    build: ./GateWay
+    ports:
+      - "3000:3000"
+    depends_on:
+      - auth-service
+      - tasks-service
+
+  # Agregar Redis para real-time y PostgreSQL para datos
