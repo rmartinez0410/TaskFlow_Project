@@ -1,7 +1,8 @@
 package main
 
 import (
-	"auth/AuthService/internal/data"
+	"auth/internal/data"
+	"auth/migrations"
 	"context"
 	"database/sql"
 	"log/slog"
@@ -26,6 +27,17 @@ func main() {
 
 	if err := godotenv.Load(); err != nil {
 		logger.Warn("no .env file found")
+	}
+
+	dbDSN := os.Getenv("AUTH_DB_DSN")
+	if dbDSN == "" {
+		logger.Error("failed to get db DSN")
+		os.Exit(1)
+	}
+
+	if err := migrations.RunMigrations(dbDSN); err != nil {
+		logger.Error("failed to run db migrations", err.Error())
+		os.Exit(1)
 	}
 
 	accessSecret := os.Getenv("JWT_ACCESS_SECRET")
@@ -64,7 +76,7 @@ func main() {
 		Discard:     nats.DiscardOld,
 	})
 
-	db, err := openDB(os.Getenv("AUTH_DB_DSN"))
+	db, err := openDB(dbDSN)
 	if err != nil {
 		logger.Error("failed to connect to database", err.Error())
 		os.Exit(1)

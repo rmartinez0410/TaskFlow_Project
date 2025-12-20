@@ -1,7 +1,7 @@
 package main
 
 import (
-	"auth/AuthService/internal/data"
+	"auth/internal/data"
 	"encoding/json"
 	"net/http"
 
