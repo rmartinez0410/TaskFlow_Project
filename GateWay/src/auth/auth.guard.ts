@@ -35,7 +35,7 @@ export class AuthGuard implements CanActivate {
         if (data == true) {
           throw new UnauthorizedException(error);
         } else {
-          const newToken = this.client.send('auth.refresh', token);
+          const newToken = await this.client.send('auth.refresh', token);
 
           request.token = newToken;
 
