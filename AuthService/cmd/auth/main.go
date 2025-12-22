@@ -53,6 +53,10 @@ func main() {
 		Timeout:        time.Second,
 	}
 
+	if url := os.Getenv("NATS_URL"); url != "" {
+		opts.Url = url
+	}
+
 	nc, err := opts.Connect()
 	if err != nil {
 		logger.Error("failed to connect to NATS", err.Error())

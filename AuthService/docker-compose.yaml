@@ -2,11 +2,11 @@ services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER: auth
       POSTGRES_PASSWORD: password
       POSTGRES_DB: auth
     healthcheck:
-      test: ["CMD-SHELL", "pg_is_ready -U user -d auth_db"]
+      test: ["CMD-SHELL", "pg_is_ready -U user -d auth"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -19,18 +19,25 @@ services:
       - "8222:8222"
     volumes:
       - nats_data:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   auth-service:
     build: .
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      - AUTH_DB_DSN=postgres://auth:password@db:5432/auth?sslmode=disable
+      - NATS_URL=nats://nats:4222
+      - JWT_ACCESS_SECRET="pei3einoh0Beem6uM6Ungohn2heiv5lah1ael4joopie5JaigeikoozaoTew2Eh6"
     depends_on:
       db:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   nats_data:

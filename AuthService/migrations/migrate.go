@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"embed"
+	"errors"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -23,5 +24,8 @@ func RunMigrations(dsn string) error {
 	}
 
 	err = m.Up()
+	if errors.Is(err, migrate.ErrNoChange) {
+		return nil
+	}
 	return err
 }
