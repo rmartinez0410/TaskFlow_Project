@@ -3,7 +3,9 @@ import { IsEmail, IsString, MaxLength, MinLength } from "class-validator";
 export class Registeruserdto{
     
     @IsString()
-    name: String;
+    @MinLength(2)
+    @MaxLength(30)
+    username: String;
     
     @IsEmail()
     @IsString()
