@@ -15,7 +15,7 @@ import (
 )
 
 func (app *application) start() error {
-	_, err := app.js.Subscribe("auth.*", func(msg *nats.Msg) {
+	_, err := app.nc.QueueSubscribe("auth.*", "auth_workers", func(msg *nats.Msg) {
 		subject := strings.Split(msg.Subject, ".")[1]
 
 		switch subject {

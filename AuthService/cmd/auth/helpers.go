@@ -26,10 +26,6 @@ func (app *application) sendErrorResponse(msg *nats.Msg, status int, message any
 	}
 
 	err = msg.Respond(responseData)
-	if nil == err {
-
-		err = msg.Ack()
-	}
 	if err != nil {
 		app.logger.Error("failed to send error response", "error", err)
 	}
@@ -60,9 +56,6 @@ func (app *application) sendSuccessResponse(msg *nats.Msg, status int, body any)
 	}
 
 	err = msg.Respond(responseData)
-	if nil == err {
-		err = msg.Ack()
-	}
 	if err != nil {
 		app.logger.Error("failed to send success response", "error", err)
 	}

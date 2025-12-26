@@ -71,12 +71,12 @@ func main() {
 	}
 
 	_, err = js.AddStream(&nats.StreamConfig{
-		Name:        "auth",
-		Description: "stream for authentication commands and events",
-		Subjects:    []string{"auth.>"},
+		Name:        "auth_events",
+		Description: "stream for authentication events",
+		Subjects:    []string{"auth.events.>"},
 		Retention:   nats.WorkQueuePolicy,
 		MaxAge:      7 * 24 * time.Hour,
-		MaxMsgs:     1000000,
+		MaxMsgs:     100000000,
 		Discard:     nats.DiscardOld,
 	})
 
