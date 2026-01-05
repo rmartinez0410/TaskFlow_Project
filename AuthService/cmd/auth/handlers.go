@@ -3,15 +3,15 @@ package main
 import (
 	"auth/internal/data"
 	"auth/internal/validator"
-	"encoding/json"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func (app *application) start() error {
@@ -19,12 +19,14 @@ func (app *application) start() error {
 		subject := strings.Split(msg.Subject, ".")[1]
 
 		switch subject {
+		case "healthcheck":
+			app.healthcheck(msg)
 		case "register":
 			app.registerHandler(msg)
 		case "login":
 			app.loginHandler(msg)
 		case "validate":
-			app.validateTokenHandler(msg)
+			app.accessTokenHandler(msg)
 		case "refresh":
 			app.refreshTokenHandler(msg)
 		case "logout":
@@ -33,30 +35,29 @@ func (app *application) start() error {
 			app.sendErrorResponse(msg, http.StatusUnprocessableEntity, "invalid subject")
 		}
 	})
-
 	return err
+}
+
+func (app *application) healthcheck(msg *nats.Msg) {
+	app.sendSuccessResponse(msg, http.StatusOK, "auth up and running")
 }
 
 func (app *application) registerHandler(msg *nats.Msg) {
 	var input data.RegisterInput
-	if err := json.Unmarshal(msg.Data, &input); err != nil {
-		app.sendUnprocessableEntityResponse(msg)
+	if !app.readJSON(msg, &input, func(v *validator.Validator) {
+		data.ValidateRegisterInput(v, input)
+	}) {
 		return
 	}
+
 	user := &data.User{Email: input.Email, Username: input.Username}
-	if err := user.Password.Set(&input.Password); err != nil {
+	if err := user.Password.Set(input.Password); err != nil {
 		app.sendInternalServerErrorResponse(msg)
-		return
-	}
-	v := validator.New()
-	if data.ValidateUser(user, v); !v.Valid() {
-		app.sendErrorResponse(msg, http.StatusUnprocessableEntity, v.Errors)
 		return
 	}
 	if err := app.models.UserModel.Insert(user); err != nil {
 		if errors.Is(err, data.ErrDuplicateEmail) {
-			v.AddError("email", "is already in use")
-			app.sendErrorResponse(msg, http.StatusConflict, v.Errors)
+			app.sendErrorResponse(msg, http.StatusConflict, "email is already in use")
 			return
 		}
 		app.sendInternalServerErrorResponse(msg)
@@ -67,16 +68,9 @@ func (app *application) registerHandler(msg *nats.Msg) {
 
 func (app *application) loginHandler(msg *nats.Msg) {
 	var input data.LoginInput
-	if err := json.Unmarshal(msg.Data, &input); err != nil {
-		app.sendUnprocessableEntityResponse(msg)
-		return
-	}
-
-	v := validator.New()
-	data.ValidateEmail(input.Email, v)
-	data.ValidatePasswordPlainText(input.Password, v)
-	if !v.Valid() {
-		app.sendErrorResponse(msg, http.StatusBadRequest, v.Errors)
+	if !app.readJSON(msg, &input, func(v *validator.Validator) {
+		data.ValidateLoginInput(v, input)
+	}) {
 		return
 	}
 
@@ -88,11 +82,11 @@ func (app *application) loginHandler(msg *nats.Msg) {
 
 	ok, err := func() (bool, error) {
 		dummyHash := data.User{}
-		_ = dummyHash.Password.Set(&input.Password)
+		_ = dummyHash.Password.Set(input.Password)
 		if user != nil {
-			return user.Password.Matches(&input.Password)
+			return user.Password.Matches(input.Password)
 		}
-		return dummyHash.Password.Matches(&input.Password)
+		return dummyHash.Password.Matches(input.Password)
 	}()
 
 	if err != nil || !ok || user == nil {
@@ -100,32 +94,40 @@ func (app *application) loginHandler(msg *nats.Msg) {
 		return
 	}
 
-	accessToken, err := app.generateAccessToken(user)
+	sessionID := uuid.NewString()
+	accessToken, err := app.generateAccessToken(user.ID, user.Email, user.Username, sessionID)
 	if err != nil {
 		app.sendInternalServerErrorResponse(msg)
 		return
 	}
 	opaqueToken, err := app.generateOpaqueToken()
 	if err != nil {
+		app.logger.Error("error generating opaque token")
 		app.sendInternalServerErrorResponse(msg)
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(opaqueToken), 12)
-	if err != nil {
-		app.sendInternalServerErrorResponse(msg)
-		return
-	}
+	hash := sha256.Sum256([]byte(opaqueToken))
 
 	session := &data.Session{
-		TokenHash:  hash,
+		SessionID:  sessionID,
+		TokenHash:  hash[:],
 		UserID:     user.ID,
 		DeviceName: input.DeviceName,
 		DeviceType: input.DeviceType,
 		RememberMe: input.RememberMe,
-		IPAddress:  input.IPAddress,
+		ExpiresAt:  time.Now().Add(24 * time.Hour),
+		IPAddress:  nil,
 		UserAgent:  input.UserAgent,
 	}
-	if err := app.models.SessionModel.Insert(session, 5); err != nil {
+
+	if input.IPAddress != "" {
+		session.IPAddress = &input.IPAddress
+	}
+	if session.RememberMe {
+		session.ExpiresAt = time.Now().Add(30 * 24 * time.Hour)
+	}
+
+	if err := app.models.SessionModel.Insert(session); err != nil {
 		app.sendInternalServerErrorResponse(msg)
 		return
 	}
@@ -157,13 +159,13 @@ func (app *application) loginHandler(msg *nats.Msg) {
 
 func (app *application) logOutHandler(msg *nats.Msg) {
 	var input data.LogoutInput
-	err := json.Unmarshal(msg.Data, &input)
-	if err != nil {
-		app.sendUnprocessableEntityResponse(msg)
+	if !app.readJSON(msg, &input, func(v *validator.Validator) {
+		data.ValidateLogoutInput(v, input)
+	}) {
 		return
 	}
 
-	err = app.models.SessionModel.Revoke(input.SessionID)
+	err := app.models.SessionModel.Revoke(input.SessionID)
 	if err != nil {
 		if errors.Is(err, data.ErrNoRecord) {
 			app.sendErrorResponse(msg, http.StatusNotFound, "session not found")
@@ -176,12 +178,14 @@ func (app *application) logOutHandler(msg *nats.Msg) {
 	app.sendSuccessResponse(msg, http.StatusOK, "user successfully logged out")
 }
 
-func (app *application) validateTokenHandler(msg *nats.Msg) {
-	var input data.ValidateTokenInput
-	if err := json.Unmarshal(msg.Data, &input); err != nil {
-		app.sendUnprocessableEntityResponse(msg)
+func (app *application) accessTokenHandler(msg *nats.Msg) {
+	var input data.AccessTokenInput
+	if !app.readJSON(msg, &input, func(v *validator.Validator) {
+		data.ValidateAccessTokenInput(v, input)
+	}) {
 		return
 	}
+
 	claims, err := app.validateAccessToken(input.TokenString)
 	if err != nil {
 		switch {
@@ -194,6 +198,21 @@ func (app *application) validateTokenHandler(msg *nats.Msg) {
 		}
 		return
 	}
+
+	session, err := app.models.SessionModel.GetByID(claims.SessionID)
+	if err != nil {
+		if errors.Is(err, data.ErrNoRecord) {
+			app.sendErrorResponse(msg, http.StatusUnauthorized, "no session found")
+		}
+		app.sendInternalServerErrorResponse(msg)
+		return
+	}
+
+	if session.RevokedAt != nil {
+		app.sendErrorResponse(msg, http.StatusUnauthorized, "token expired")
+		return
+	}
+
 	app.sendSuccessResponse(msg, http.StatusOK, data.TokenValidationResponse{
 		UserID:   claims.UserID,
 		Email:    claims.Email,
@@ -203,12 +222,14 @@ func (app *application) validateTokenHandler(msg *nats.Msg) {
 
 func (app *application) refreshTokenHandler(msg *nats.Msg) {
 	var input data.RefreshTokenInput
-	if err := json.Unmarshal(msg.Data, &input); err != nil {
-		app.sendUnprocessableEntityResponse(msg)
+	if !app.readJSON(msg, &input, func(v *validator.Validator) {
+		data.ValidateRefreshTokenInput(v, input)
+	}) {
 		return
 	}
 
-	session, err := app.models.SessionModel.GetByID(input.TokenString)
+	hash := sha256.Sum256([]byte(input.TokenString))
+	session, err := app.models.SessionModel.GetByTokenHash(hash[:])
 	if err != nil {
 		if errors.Is(err, data.ErrNoRecord) {
 			app.sendErrorResponse(msg, http.StatusUnauthorized, "invalid token")
@@ -238,7 +259,7 @@ func (app *application) refreshTokenHandler(msg *nats.Msg) {
 		app.sendInternalServerErrorResponse(msg)
 		return
 	}
-	accessToken, err := app.generateAccessToken(user)
+	accessToken, err := app.generateAccessToken(user.ID, user.Email, user.Username, session.SessionID)
 	if err != nil {
 		app.sendInternalServerErrorResponse(msg)
 		return

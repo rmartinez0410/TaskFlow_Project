@@ -35,14 +35,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := migrations.RunMigrations(dbDSN); err != nil {
-		logger.Error("failed to run db migrations", err.Error())
-		os.Exit(1)
-	}
-
 	accessSecret := os.Getenv("JWT_ACCESS_SECRET")
 	if accessSecret == "" {
 		logger.Error("failed to get jwt secret")
+		os.Exit(1)
+	}
+
+	db, err := openDB(dbDSN)
+	if err != nil {
+		logger.Error("failed to connect to database", slog.Any("err", err.Error()))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("error during database closure", slog.Any("err", err.Error()))
+			os.Exit(1)
+		}
+	}()
+
+	if err := migrations.RunUpMigrations(dbDSN); err != nil {
+		logger.Error("failed to run db migrations", slog.Any("err", err.Error()))
 		os.Exit(1)
 	}
 
@@ -59,14 +71,14 @@ func main() {
 
 	nc, err := opts.Connect()
 	if err != nil {
-		logger.Error("failed to connect to NATS", err.Error())
+		logger.Error("failed to connect to NATS", slog.Any("err", err.Error()))
 		os.Exit(1)
 	}
 	defer nc.Close()
 
 	js, err := nc.JetStream()
 	if err != nil {
-		logger.Error("jetstream not available", err.Error())
+		logger.Error("jetstream not available", slog.Any("err", err.Error()))
 		os.Exit(1)
 	}
 
@@ -80,18 +92,6 @@ func main() {
 		Discard:     nats.DiscardOld,
 	})
 
-	db, err := openDB(dbDSN)
-	if err != nil {
-		logger.Error("failed to connect to database", err.Error())
-		os.Exit(1)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			logger.Error("error during database closure", err.Error())
-			os.Exit(1)
-		}
-	}()
-
 	app := &application{
 		nc:              nc,
 		js:              js,
@@ -102,7 +102,7 @@ func main() {
 
 	err = app.start()
 	if err != nil {
-		app.logger.Error("failed to start application", err.Error())
+		app.logger.Error("failed to start application", slog.Any("err", err.Error()))
 		os.Exit(1)
 	}
 

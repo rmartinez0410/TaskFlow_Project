@@ -2,37 +2,39 @@ services:
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: auth
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: auth
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auth -d auth"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   nats:
-    image: nats:2.12-alpine
-    command: ["-js", "-sd", "/data", "-m", "8222"]
-    ports:
-      - "4222:4222"
-      - "8222:8222"
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data"]
     volumes:
       - nats_data:/data
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "4222"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
 
   auth-service:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
     ports:
       - "8000:8000"
     environment:
-      - AUTH_DB_DSN=postgres://auth:password@db:5432/auth?sslmode=disable
-      - NATS_URL=nats://nats:4222
-      - JWT_ACCESS_SECRET="pei3einoh0Beem6uM6Ungohn2heiv5lah1ael4joopie5JaigeikoozaoTew2Eh6"
+      - AUTH_DB_DSN=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      - NATS_URL=${NATS_URL}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
     depends_on:
       db:
         condition: service_healthy
@@ -40,4 +42,5 @@ services:
         condition: service_healthy
 
 volumes:
+  postgres_data:
   nats_data:

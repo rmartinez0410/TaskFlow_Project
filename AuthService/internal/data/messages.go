@@ -1,6 +1,9 @@
 package data
 
-import "time"
+import (
+	"auth/internal/validator"
+	"time"
+)
 
 type RegisterInput struct {
 	Email    string `json:"email"`
@@ -20,7 +23,7 @@ type LoginInput struct {
 type LogoutInput struct {
 	SessionID string `json:"session_id"`
 }
-type ValidateTokenInput struct {
+type AccessTokenInput struct {
 	TokenString string `json:"access_token"`
 }
 
@@ -52,4 +55,27 @@ type TokenValidationResponse struct {
 }
 type TokenRefreshResponse struct {
 	AccessToken string `json:"access_token"`
+}
+
+func ValidateRegisterInput(v *validator.Validator, input RegisterInput) {
+	validateUserName(v, input.Username)
+	ValidateEmail(v, input.Email)
+	ValidatePasswordPlainText(v, input.Password)
+}
+
+func ValidateLoginInput(v *validator.Validator, input LoginInput) {
+	ValidateEmail(v, input.Email)
+	ValidatePasswordPlainText(v, input.Password)
+}
+
+func ValidateLogoutInput(v *validator.Validator, input LogoutInput) {
+	v.Check(input.SessionID != "", "session_id", "must be provided")
+}
+
+func ValidateAccessTokenInput(v *validator.Validator, input AccessTokenInput) {
+	v.Check(input.TokenString != "", "access_token", "must be provided")
+}
+
+func ValidateRefreshTokenInput(v *validator.Validator, input RefreshTokenInput) {
+	v.Check(input.TokenString != "", "refresh_token", "must be provided")
 }

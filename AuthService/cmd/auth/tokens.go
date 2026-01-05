@@ -1,7 +1,6 @@
 package main
 
 import (
-	"auth/internal/data"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -11,37 +10,37 @@ import (
 )
 
 type AccessToken struct {
-	UserID   string `json:"user_id"`
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Type     string `json:"type"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	Username  string `json:"username"`
+	SessionID string `json:"session_id"`
 	jwt.RegisteredClaims
 }
 
-func (app *application) generateAccessToken(user *data.User) (string, error) {
+func (app *application) generateAccessToken(userID string, email string, username string, sessionID string) (string, error) {
 	claims := &AccessToken{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Username: user.Username,
-		Type:     "access_token",
+		UserID:    userID,
+		Email:     email,
+		Username:  username,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 			Issuer:    "auth-service",
-			Subject:   user.ID,
+			Subject:   userID,
 			Audience:  []string{"task-flow"},
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
 
-	return token.SignedString(app.jwtAccessSecret)
+	return token.SignedString([]byte(app.jwtAccessSecret))
 }
 
 func (app *application) validateAccessToken(tokenString string) (*AccessToken, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &AccessToken{}, func(token *jwt.Token) (any, error) {
-		return app.jwtAccessSecret, nil
+		return []byte(app.jwtAccessSecret), nil
 	})
 
 	if err != nil {

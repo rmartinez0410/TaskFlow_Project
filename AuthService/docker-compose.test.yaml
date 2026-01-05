@@ -1,0 +1,36 @@
+services:
+  db-test:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: auth_test
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: auth_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_test -d auth_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  nats-test:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    expose:
+      - "4222"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4222"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  auth-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      db-test:
+        condition: service_healthy
+      nats-test:
+        condition: service_healthy
+    environment:
+      - AUTH_DB_TEST_DSN=postgres://auth_test:password@db-test:5432/auth_test?sslmode=disable
+      - NATS_URL=nats://nats-test:4222
