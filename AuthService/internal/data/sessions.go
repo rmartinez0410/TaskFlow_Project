@@ -17,54 +17,43 @@ type Session struct {
 	ExpiresAt  time.Time
 	LastUsedAt time.Time
 	RevokedAt  *time.Time
-	IPAddress  string
+	IPAddress  *string
 	UserAgent  string
 }
 type SessionModel struct {
 	DB *sql.DB
 }
 
-func (m *SessionModel) Insert(s *Session, max int) error {
-	tx, err := m.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func(tx *sql.Tx) {
-		_ = tx.Rollback()
-	}(tx)
+func (m *SessionModel) Insert(s *Session) error {
+	const query = `
+       INSERT INTO sessions
+       (session_id, token_hash, user_id, device_name, device_type, 
+        remember_me, expires_at, created_at, last_used_at, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 
+               CASE WHEN $8 = '0001-01-01 00:00:00+00'::timestamptz THEN NOW() ELSE $8 END, 
+               CASE WHEN $9 = '0001-01-01 00:00:00+00'::timestamptz THEN NOW() ELSE $9 END, 
+               $10, $11)
+       RETURNING session_id, created_at, last_used_at`
 
-	const insert = `
-		INSERT INTO sessions
-		(token_hash, user_id, device_name, device_type, remember_me, expires_at, ip_address, user_agent)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING session_id, created_at, last_used_at`
-
-	err = tx.QueryRow(insert,
-		s.TokenHash, s.UserID, s.DeviceName, s.DeviceType,
-		s.RememberMe, s.ExpiresAt, s.IPAddress, s.UserAgent,
+	err := m.DB.QueryRow(query,
+		s.SessionID,
+		s.TokenHash,
+		s.UserID,
+		s.DeviceName,
+		s.DeviceType,
+		s.RememberMe,
+		s.ExpiresAt,
+		s.CreatedAt,
+		s.LastUsedAt,
+		s.IPAddress,
+		s.UserAgent,
 	).Scan(&s.SessionID, &s.CreatedAt, &s.LastUsedAt)
+
 	if err != nil {
 		return err
 	}
 
-	const prune = `
-		UPDATE sessions
-		SET revoked_at = NOW()
-		WHERE session_id IN (
-			SELECT session_id
-			FROM sessions
-			WHERE user_id = $1
-			  AND revoked_at IS NULL
-			  AND expires_at > NOW()
-			ORDER BY last_used_at DESC
-			OFFSET $2
-			FOR UPDATE
-		)`
-	if _, err = tx.Exec(prune, s.UserID, max); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	return nil
 }
 
 func (m *SessionModel) GetByID(id string) (*Session, error) {
@@ -97,7 +86,7 @@ func (m *SessionModel) GetByID(id string) (*Session, error) {
 }
 
 func (m *SessionModel) GetOtherSessions(userID string, currentSessionID string) ([]SessionResponse, error) {
-	stmt := `SELECT session_id, device_name, device_type, last_used_at, ip_address
+	stmt := `SELECT session_id, device_name, device_type, last_used_at
 	FROM   sessions
 	WHERE  user_id      = $1
 	  AND  session_id  != $2
@@ -141,10 +130,50 @@ func (m *SessionModel) UpdateLastUsed(id string) error {
 }
 
 func (m *SessionModel) Revoke(id string) error {
-	stmt := `UPDATE sessions SET revoked_at = NOW() WHERE session_id = $1`
-	_, err := m.DB.Exec(stmt, id)
-	if errors.Is(err, sql.ErrNoRows) {
+	stmt := `UPDATE sessions SET revoked_at = NOW() WHERE session_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`
+	r, err := m.DB.Exec(stmt, id)
+	if err != nil {
+		return err
+	}
+	n, err := r.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
 		return ErrNoRecord
 	}
-	return err
+	return nil
+}
+
+func (m *SessionModel) GetByTokenHash(hash []byte) (*Session, error) {
+	const q = `
+		SELECT session_id, user_id, device_name, device_type, remember_me,
+		       created_at, expires_at, last_used_at, revoked_at, ip_address, user_agent
+		FROM sessions
+		WHERE token_hash = $1
+		  AND revoked_at IS NULL
+		  AND expires_at > NOW()
+		LIMIT 1`
+
+	var s Session
+	err := m.DB.QueryRow(q, hash).Scan(
+		&s.SessionID,
+		&s.UserID,
+		&s.DeviceName,
+		&s.DeviceType,
+		&s.RememberMe,
+		&s.CreatedAt,
+		&s.ExpiresAt,
+		&s.LastUsedAt,
+		&s.RevokedAt,
+		&s.IPAddress,
+		&s.UserAgent,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoRecord
+		}
+		return nil, err
+	}
+	return &s, nil
 }

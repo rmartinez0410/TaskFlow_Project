@@ -20,35 +20,39 @@ type User struct {
 	UpdatedAt string   `json:"updated_at"`
 }
 
-func ValidateUser(u *User, v *validator.Validator) {
-	v.Check(u.Username != "", "username", "must be provided")
-	v.Check(len(u.Username) <= 100, "username", "must not be more than 100 characters")
-	v.Check(len(u.Username) >= 4, "username", "must not be less than 4 characters")
-
-	ValidateEmail(u.Email, v)
-	if u.Password.plaintext != nil {
-		ValidatePasswordPlainText(*u.Password.plaintext, v)
+func validateUserName(v *validator.Validator, username string) {
+	if username == "" {
+		v.AddError("username", "must be provided")
+		return
 	}
+	v.Check(len(username) <= 100, "username", "must not be more than 100 characters")
+	v.Check(len(username) >= 4, "username", "must not be less than 4 characters")
 }
 
-func ValidateEmail(email string, v *validator.Validator) {
-	v.Check(email != "", "email", "must be provided")
+func ValidateEmail(v *validator.Validator, email string) {
+	if email == "" {
+		v.AddError("email", "must be provided")
+		return
+	}
 	v.Check(validator.Matches(email, validator.EmailRX), "email", "must be a valid address")
 }
 
-func ValidatePasswordPlainText(p string, v *validator.Validator) {
-	v.Check(p != "", "password", "must be provided")
+func ValidatePasswordPlainText(v *validator.Validator, p string) {
+	if p == "" {
+		v.AddError("password", "must be provided")
+		return
+	}
 	v.Check(len(p) >= 8, "password", "must be at least 8 bytes long")
 	v.Check(len(p) <= 72, "password", "must not be more than 72 bytes long")
 }
 
 type password struct {
-	plaintext *string
+	plaintext string
 	hash      []byte
 }
 
-func (p *password) Set(plaintext *string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(*plaintext), 12)
+func (p *password) Set(plaintext string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(plaintext), 12)
 	if err != nil {
 		return err
 	}
@@ -59,8 +63,8 @@ func (p *password) Set(plaintext *string) error {
 	return nil
 }
 
-func (p *password) Matches(plaintext *string) (bool, error) {
-	err := bcrypt.CompareHashAndPassword(p.hash, []byte(*plaintext))
+func (p *password) Matches(plaintext string) (bool, error) {
+	err := bcrypt.CompareHashAndPassword(p.hash, []byte(plaintext))
 
 	if err != nil {
 		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {

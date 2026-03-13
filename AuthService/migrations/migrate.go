@@ -10,19 +10,17 @@ import (
 )
 
 //go:embed *.sql
-var migrationFiles embed.FS
+var MigrationFiles embed.FS
 
-func RunMigrations(dsn string) error {
-	d, err := iofs.New(migrationFiles, ".")
+func RunUpMigrations(dsn string) error {
+	d, err := iofs.New(MigrationFiles, ".")
 	if err != nil {
 		return err
 	}
-
 	m, err := migrate.NewWithSourceInstance("iofs", d, dsn)
 	if err != nil {
 		return err
 	}
-
 	err = m.Up()
 	if errors.Is(err, migrate.ErrNoChange) {
 		return nil
